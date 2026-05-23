@@ -2,7 +2,7 @@ import json
 import math
 import os
 import sys
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt
+from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -30,6 +30,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from hardware_info import get_hardware_info
+
 
 def make_label(text, object_name=None, alignment=Qt.AlignLeft):
     label = QLabel(text)
@@ -44,9 +46,23 @@ def load_config():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(base_dir, "config.json")
     data = {
-        "user_name": "Nacha",
-        "user_role": "Administrador",
-        "profile_photo": "img/Untitled2.png",
+        "default_user": "nacha",
+        "users": [
+            {
+                "username": "nacha",
+                "display_name": "Nacha",
+                "role": "Administrador",
+                "profile_photo": "img/nacha.png",
+                "password": "lolman12",
+            },
+            {
+                "username": "maxine",
+                "display_name": "Maxine",
+                "role": "Usuario",
+                "profile_photo": "img/maxine.jpg",
+                "password": "123456",
+            },
+        ],
     }
 
     if not os.path.isfile(config_path):
@@ -58,16 +74,77 @@ def load_config():
     except (OSError, json.JSONDecodeError):
         return data
 
-    for key in data:
-        if isinstance(config.get(key), str) and config[key].strip():
-            data[key] = config[key].strip()
+    users = []
+    raw_users = config.get("users")
+    if isinstance(raw_users, list):
+        for entry in raw_users:
+            if not isinstance(entry, dict):
+                continue
+            username = entry.get("username", "").strip()
+            if not username:
+                continue
+            users.append(
+                {
+                    "username": username,
+                    "display_name": entry.get("display_name", username).strip() or username,
+                    "role": entry.get("role", "Usuario").strip() or "Usuario",
+                    "profile_photo": entry.get("profile_photo", "").strip(),
+                    "password": entry.get("password", ""),
+                }
+            )
+    else:
+        legacy_name = str(config.get("user_name", "")).strip()
+        legacy_role = str(config.get("user_role", "")).strip() or "Usuario"
+        legacy_photo = str(config.get("profile_photo", "")).strip()
+        if legacy_name:
+            users.append(
+                {
+                    "username": legacy_name.lower(),
+                    "display_name": legacy_name,
+                    "role": legacy_role,
+                    "profile_photo": legacy_photo,
+                    "password": "",
+                }
+            )
+
+    if users:
+        data["users"] = users
+
+    default_user = str(config.get("default_user", "")).strip()
+    if default_user:
+        data["default_user"] = default_user
 
     return data
+
+
+def normalize_username(value):
+    return value.strip().lower()
+
+
+def find_user_profile(config, username):
+    key = normalize_username(username)
+    for user in config.get("users", []):
+        if normalize_username(user.get("username", "")) == key:
+            return user
+        if normalize_username(user.get("display_name", "")) == key:
+            return user
+    return None
+
+
+def get_default_user(config):
+    default_user = config.get("default_user", "")
+    profile = find_user_profile(config, default_user)
+    if profile:
+        return profile
+    users = config.get("users", [])
+    return users[0] if users else {"display_name": "Usuario", "role": "", "profile_photo": ""}
 
 
 def resolve_path(relative_path):
     base_dir = os.path.dirname(os.path.abspath(__file__))
     return os.path.normpath(os.path.join(base_dir, relative_path))
+
+
 
 
 def make_round_pixmap(image_path, size):
@@ -440,6 +517,7 @@ class DetailsPanel(QFrame):
         super().__init__(parent)
         self.setObjectName("detailsPanel")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.value_labels = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
@@ -452,10 +530,16 @@ class DetailsPanel(QFrame):
             row = QHBoxLayout()
             row.setSpacing(12)
             row.addWidget(make_label(label, "detailLabel"))
-            row.addWidget(make_label(value, "detailValue", alignment=Qt.AlignRight))
+            value_label = make_label(value, "detailValue", alignment=Qt.AlignRight)
+            self.value_labels.append(value_label)
+            row.addWidget(value_label)
             layout.addLayout(row)
             if index < len(rows) - 1:
                 layout.addWidget(make_separator("detailLine"))
+
+    def set_values(self, values):
+        for label, value in zip(self.value_labels, values):
+            label.setText(value)
 
 
 class StatusCard(QFrame):
@@ -546,7 +630,11 @@ class InfoCard(QFrame):
         layout.setSpacing(6)
 
         layout.addWidget(make_label(title, "infoCardTitle"))
-        layout.addWidget(make_label(value, "infoCardValue"))
+        self.value_label = make_label(value, "infoCardValue")
+        layout.addWidget(self.value_label)
+
+    def set_value(self, value):
+        self.value_label.setText(value)
 
 
 class ListPanel(QFrame):
@@ -873,11 +961,49 @@ class CloudView(QWidget):
         layout.addWidget(make_label("Cloud", "pageTitle"))
         layout.addWidget(make_separator("separator"))
 
+        self.provider_card = InfoCard("Proveedor", "AWS")
+        self.region_card = InfoCard("Región activa", "US-East-1")
+        self.status_card = InfoCard("Estado", "Operativo")
+
         cards = QHBoxLayout()
         cards.setSpacing(18)
-        cards.addWidget(InfoCard("Proveedor", "AWS"), 1)
-        cards.addWidget(InfoCard("Región activa", "US-East-1"), 1)
-        cards.addWidget(InfoCard("Estado", "Operativo"), 1)
+        cards.addWidget(self.provider_card, 1)
+        cards.addWidget(self.region_card, 1)
+        cards.addWidget(self.status_card, 1)
+
+        selector_panel = QFrame()
+        selector_panel.setObjectName("cloudPanel")
+        selector_layout = QHBoxLayout(selector_panel)
+        selector_layout.setContentsMargins(18, 16, 18, 16)
+        selector_layout.setSpacing(16)
+
+        self.provider_combo = QComboBox()
+        self.provider_combo.setObjectName("cloudSelect")
+        self.provider_combo.addItems(["AWS", "Azure", "GCP"])
+        self.provider_combo.setFixedHeight(40)
+
+        self.tier_combo = QComboBox()
+        self.tier_combo.setObjectName("cloudSelect")
+        self.tier_combo.addItems(["Básico", "Profesional", "Enterprise"])
+        self.tier_combo.setFixedHeight(40)
+
+        self.region_combo = QComboBox()
+        self.region_combo.setObjectName("cloudSelect")
+        self.region_combo.setFixedHeight(40)
+
+        self.region_map = {
+            "AWS": ["US-East-1", "US-West-2", "eu-north-1"],
+            "Azure": ["East US", "West Europe", "South Central US"],
+            "GCP": ["us-central1", "europe-west1", "southamerica-east1"],
+        }
+
+        selector_layout.addWidget(self._build_selector("Proveedor", self.provider_combo), 1)
+        selector_layout.addWidget(self._build_selector("Tier", self.tier_combo), 1)
+        selector_layout.addWidget(self._build_selector("Región", self.region_combo), 1)
+
+        self.provider_combo.currentTextChanged.connect(self._update_regions)
+        self.region_combo.currentTextChanged.connect(self._sync_cards)
+        self._update_regions(self.provider_combo.currentText())
 
         items = [
             "GPU Instances: 6 activas",
@@ -888,7 +1014,29 @@ class CloudView(QWidget):
         list_panel = ListPanel("Servicios activos", items)
 
         layout.addLayout(cards)
+        layout.addWidget(selector_panel)
         layout.addWidget(list_panel)
+
+    def _build_selector(self, label_text, combo):
+        wrapper = QFrame()
+        wrapper.setObjectName("cloudSelector")
+        layout = QVBoxLayout(wrapper)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+
+        layout.addWidget(make_label(label_text, "cloudLabel"))
+        layout.addWidget(combo)
+        return wrapper
+
+    def _update_regions(self, provider):
+        regions = self.region_map.get(provider, [])
+        self.region_combo.clear()
+        self.region_combo.addItems(regions)
+        self._sync_cards()
+
+    def _sync_cards(self):
+        self.provider_card.set_value(self.provider_combo.currentText())
+        self.region_card.set_value(self.region_combo.currentText())
 
 
 class HistoryView(QWidget):
@@ -935,6 +1083,187 @@ class SettingsView(QWidget):
         layout.addWidget(list_panel)
 
 
+class PatternPanel(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setObjectName("patternPanel")
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor("#0b0b0b"))
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        pen = QPen(QColor(255, 255, 255, 28))
+        pen.setWidth(1)
+        painter.setPen(pen)
+
+        size = 160
+        half = size / 2
+        width = self.width()
+        height = self.height()
+
+        for y in range(-size, height + size, size):
+            for x in range(-size, width + size, size):
+                diamond = QPolygonF(
+                    [
+                        QPointF(x, y - half),
+                        QPointF(x + half, y),
+                        QPointF(x, y + half),
+                        QPointF(x - half, y),
+                    ]
+                )
+                painter.drawPolygon(diamond)
+
+
+class LoginUserCard(QFrame):
+    def __init__(self, user_profile, parent=None):
+        super().__init__(parent)
+        self.setObjectName("loginUserCard")
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(10)
+
+        avatar = QLabel()
+        photo_path = user_profile.get("profile_photo", "")
+        avatar_pixmap = None
+        if photo_path:
+            avatar_pixmap = make_round_pixmap(resolve_path(photo_path), 34)
+        if avatar_pixmap:
+            avatar.setPixmap(avatar_pixmap)
+        else:
+            avatar.setText(user_profile.get("display_name", "?")[:1].upper())
+            avatar.setAlignment(Qt.AlignCenter)
+            avatar.setObjectName("loginAvatarFallback")
+
+        avatar.setFixedSize(34, 34)
+
+        text_layout = QVBoxLayout()
+        text_layout.setSpacing(2)
+        text_layout.addWidget(make_label(user_profile.get("display_name", ""), "loginUserName"))
+        text_layout.addWidget(make_label(user_profile.get("role", ""), "loginUserRole"))
+
+        layout.addWidget(avatar)
+        layout.addLayout(text_layout)
+        layout.addStretch()
+
+
+class LoginWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+
+        self.config = load_config()
+        self.setWindowTitle("Semáforo IA - Login")
+        self.resize(1100, 640)
+
+        central = QWidget()
+        self.setCentralWidget(central)
+
+        root_layout = QHBoxLayout(central)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        left_panel = PatternPanel()
+        left_layout = QVBoxLayout(left_panel)
+        left_layout.setContentsMargins(40, 40, 40, 40)
+        left_layout.setSpacing(18)
+
+        brand_icon = QLabel()
+        brand_icon.setPixmap(make_leaf_pixmap(64))
+        brand_icon.setFixedSize(64, 64)
+
+        brand_title = make_label("SEMÁFORO\nIA", "loginBrand", alignment=Qt.AlignCenter)
+
+        left_layout.addStretch()
+        left_layout.addWidget(brand_icon, 0, Qt.AlignHCenter)
+        left_layout.addWidget(brand_title, 0, Qt.AlignHCenter)
+        left_layout.addStretch()
+
+        right_panel = QFrame()
+        right_panel.setObjectName("loginPanel")
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(48, 48, 48, 48)
+        right_layout.setSpacing(16)
+
+        right_layout.addWidget(make_label("Login", "loginCaption"))
+        right_layout.addWidget(make_label("Bienvenido de Vuelta", "loginTitle"))
+        right_layout.addSpacing(8)
+
+        right_layout.addWidget(make_label("Usuario", "loginLabel"))
+        self.username_input = QLineEdit()
+        self.username_input.setObjectName("loginInput")
+        self.username_input.setPlaceholderText("Ingrese un usuario")
+        self.username_input.setFixedHeight(40)
+
+        right_layout.addWidget(self.username_input)
+
+        right_layout.addWidget(make_label("Contraseña", "loginLabel"))
+        self.password_input = QLineEdit()
+        self.password_input.setObjectName("loginInput")
+        self.password_input.setEchoMode(QLineEdit.Password)
+        self.password_input.setPlaceholderText("••••••••")
+        self.password_input.setFixedHeight(40)
+
+        right_layout.addWidget(self.password_input)
+
+        self.error_label = make_label("", "loginError")
+        self.error_label.setVisible(False)
+        right_layout.addWidget(self.error_label)
+
+        login_button = QPushButton("Continuar")
+        login_button.setObjectName("loginButton")
+        login_button.setCursor(Qt.PointingHandCursor)
+        login_button.setFixedWidth(140)
+        login_button.clicked.connect(self.handle_login)
+
+        right_layout.addWidget(login_button, 0, Qt.AlignLeft)
+        right_layout.addSpacing(10)
+
+        users_label = make_label("Usuarios disponibles", "loginHint")
+        right_layout.addWidget(users_label)
+
+        user_cards = QVBoxLayout()
+        user_cards.setSpacing(8)
+        for profile in self.config.get("users", []):
+            user_cards.addWidget(LoginUserCard(profile))
+        right_layout.addLayout(user_cards)
+
+        right_layout.addStretch()
+
+        root_layout.addWidget(left_panel, 3)
+        root_layout.addWidget(right_panel, 2)
+
+        self.username_input.returnPressed.connect(self.handle_login)
+        self.password_input.returnPressed.connect(self.handle_login)
+
+    def handle_login(self):
+        username = self.username_input.text().strip()
+        if not username:
+            self._set_error("Ingresa un usuario válido.")
+            return
+
+        profile = find_user_profile(self.config, username)
+        if not profile:
+            self._set_error("Usuario no encontrado. Usa nacha o maxine.")
+            return
+
+        password = self.password_input.text()
+        expected = str(profile.get("password", ""))
+        if expected and password != expected:
+            self._set_error("Contraseña incorrecta.")
+            return
+
+        self.error_label.setVisible(False)
+        self.dashboard = DashboardWindow(profile)
+        self.dashboard.show()
+        self.close()
+
+    def _set_error(self, message):
+        self.error_label.setText(message)
+        self.error_label.setVisible(True)
+
+
 class CatalogRow(QFrame):
     def __init__(self, component, comp_type, vcpus, ram, tdp, parent=None):
         super().__init__(parent)
@@ -962,11 +1291,23 @@ class HardwareCatalogView(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
+        self._hardware_loaded = False
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(18)
 
         title = make_label("Catálogo de Hardware", "pageTitle")
+
+        placeholder = "Detectando..."
+        hardware_rows = [
+            ("CPU", placeholder),
+            ("GPU", placeholder),
+            ("RAM", placeholder),
+            ("Sistema", placeholder),
+        ]
+        self.hardware_panel = DetailsPanel("Hardware detectado", hardware_rows)
+        self.hardware_panel.setObjectName("hardwarePanel")
 
         catalog_panel = QFrame()
         catalog_panel.setObjectName("catalogPanel")
@@ -1017,7 +1358,24 @@ class HardwareCatalogView(QWidget):
 
         layout.addWidget(title)
         layout.addWidget(make_separator("separator"))
+        layout.addWidget(self.hardware_panel)
         layout.addWidget(catalog_panel)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._hardware_loaded:
+            self._hardware_loaded = True
+            QTimer.singleShot(50, self._load_hardware)
+
+    def _load_hardware(self):
+        info = get_hardware_info()
+        values = [
+            info.get("cpu", "No detectado"),
+            info.get("gpu", "No detectado"),
+            info.get("ram", "No detectado"),
+            info.get("os", "No detectado"),
+        ]
+        self.hardware_panel.set_values(values)
 
 
 class PlaceholderView(QWidget):
@@ -1034,11 +1392,11 @@ class PlaceholderView(QWidget):
 
 
 class Sidebar(QFrame):
-    def __init__(self, config, parent=None):
+    def __init__(self, user_profile, parent=None):
         super().__init__(parent)
         self.setObjectName("sidebar")
         self.setFixedWidth(240)
-        self.config = config
+        self.user_profile = user_profile
 
         self.button_group = QButtonGroup(self)
         self.button_group.setExclusive(True)
@@ -1088,9 +1446,9 @@ class Sidebar(QFrame):
         layout.setContentsMargins(12, 10, 12, 10)
         layout.setSpacing(12)
 
-        user_name = self.config.get("user_name", "Usuario")
-        user_role = self.config.get("user_role", "")
-        photo_path = self.config.get("profile_photo", "")
+        user_name = self.user_profile.get("display_name", "Usuario")
+        user_role = self.user_profile.get("role", "")
+        photo_path = self.user_profile.get("profile_photo", "")
 
         avatar_pixmap = None
         if photo_path:
@@ -1128,7 +1486,7 @@ class Sidebar(QFrame):
 
 
 class DashboardWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, user_profile=None):
         super().__init__()
 
         self.setWindowTitle("Semáforo IA")
@@ -1143,7 +1501,11 @@ class DashboardWindow(QMainWindow):
         root_layout.setSpacing(0)
 
         config = load_config()
-        sidebar = Sidebar(config)
+        if user_profile is None:
+            config = load_config()
+            user_profile = get_default_user(config)
+
+        sidebar = Sidebar(user_profile)
         self.stack = QStackedWidget()
 
         content_frame = QFrame()
@@ -1194,6 +1556,16 @@ def apply_stylesheet(app):
         "}"
         "QLabel {"
         "  background: transparent;"
+        "}"
+        "QLineEdit {"
+        "  background-color: #141414;"
+        "  border: 1px solid #f2f2f2;"
+        "  border-radius: 10px;"
+        "  padding: 8px 12px;"
+        "  font-size: 13px;"
+        "}"
+        "QLineEdit:focus {"
+        "  border: 1px solid #ffffff;"
         "}"
         "QFrame#sidebar {"
         "  background-color: #0f0f0f;"
@@ -1250,6 +1622,71 @@ def apply_stylesheet(app):
         "QFrame#contentFrame {"
         "  background-color: #0b0b0b;"
         "}"
+        "QFrame#loginPanel {"
+        "  background-color: #0d0d0d;"
+        "  border-left: 1px solid #1d1d1d;"
+        "}"
+        "QLabel#loginBrand {"
+        "  font-size: 52px;"
+        "  font-weight: 700;"
+        "  letter-spacing: 2px;"
+        "  font-family: 'Georgia';"
+        "}"
+        "QLabel#loginCaption {"
+        "  font-size: 13px;"
+        "  color: #cfcfcf;"
+        "}"
+        "QLabel#loginTitle {"
+        "  font-size: 22px;"
+        "  font-weight: 700;"
+        "}"
+        "QLabel#loginLabel {"
+        "  font-size: 13px;"
+        "  color: #d8d8d8;"
+        "}"
+        "QLabel#loginHint {"
+        "  font-size: 12px;"
+        "  color: #9a9a9a;"
+        "}"
+        "QLabel#loginError {"
+        "  font-size: 12px;"
+        "  color: #ff6b6b;"
+        "}"
+        "QLineEdit#loginInput {"
+        "  background-color: #141414;"
+        "  border: 1px solid #f2f2f2;"
+        "  border-radius: 10px;"
+        "  padding: 8px 12px;"
+        "  font-size: 13px;"
+        "}"
+        "QPushButton#loginButton {"
+        "  background-color: #0f0f0f;"
+        "  border: 1px solid #f2f2f2;"
+        "  border-radius: 12px;"
+        "  padding: 8px 16px;"
+        "  font-weight: 600;"
+        "}"
+        "QPushButton#loginButton:hover {"
+        "  background-color: #1a1a1a;"
+        "}"
+        "QFrame#loginUserCard {"
+        "  background-color: #111111;"
+        "  border: 1px solid #222222;"
+        "  border-radius: 12px;"
+        "}"
+        "QLabel#loginUserName {"
+        "  font-size: 12px;"
+        "  font-weight: 600;"
+        "}"
+        "QLabel#loginUserRole {"
+        "  font-size: 11px;"
+        "  color: #9a9a9a;"
+        "}"
+        "QLabel#loginAvatarFallback {"
+        "  background-color: #151515;"
+        "  border: 1px solid #2a2a2a;"
+        "  border-radius: 17px;"
+        "}"
         "QFrame#metricCard, QFrame#summaryPanel, QFrame#summaryCard {"
         "  background-color: #141414;"
         "  border: 1px solid #f2f2f2;"
@@ -1267,10 +1704,13 @@ def apply_stylesheet(app):
         "  border: 1px solid #f2f2f2;"
         "  border-radius: 18px;"
         "}"
-        "QFrame#performanceCard, QFrame#detailsPanel, QFrame#statusCard, QFrame#infoBar, QFrame#infoCard, QFrame#listPanel {"
+        "QFrame#performanceCard, QFrame#detailsPanel, QFrame#hardwarePanel, QFrame#statusCard, QFrame#infoBar, QFrame#infoCard, QFrame#listPanel, QFrame#cloudPanel {"
         "  background-color: #141414;"
         "  border: 1px solid #f2f2f2;"
         "  border-radius: 18px;"
+        "}"
+        "QFrame#cloudSelector {"
+        "  background-color: transparent;"
         "}"
         "QFrame#activityPanel {"
         "  background-color: #121212;"
@@ -1352,10 +1792,17 @@ def apply_stylesheet(app):
         "QLabel#infoCardTitle {"
         "  font-size: 12px;"
         "  color: #bfbfbf;"
+        "  background: transparent;"
         "}"
         "QLabel#infoCardValue {"
         "  font-size: 18px;"
         "  font-weight: 700;"
+        "  background: transparent;"
+        "}"
+        "QLabel#cloudLabel {"
+        "  font-size: 12px;"
+        "  color: #cfcfcf;"
+        "  background: transparent;"
         "}"
         "QLabel#listTitle {"
         "  font-size: 15px;"
@@ -1429,7 +1876,7 @@ def apply_stylesheet(app):
         "  background-color: #2a2a2a;"
         "}"
         "QLineEdit#searchInput {"
-        "  background-color: #0f0f0f;"
+        "  background-color: #141414;"
         "  border: 1px solid #f2f2f2;"
         "  border-radius: 10px;"
         "  padding: 8px 14px;"
@@ -1438,14 +1885,14 @@ def apply_stylesheet(app):
         "QLineEdit#searchInput::placeholder {"
         "  color: #7f7f7f;"
         "}"
-        "QComboBox#filterCombo {"
-        "  background-color: #0f0f0f;"
+        "QComboBox#filterCombo, QComboBox#cloudSelect {"
+        "  background-color: #141414;"
         "  border: 1px solid #f2f2f2;"
         "  border-radius: 10px;"
         "  padding: 6px 12px;"
         "  font-size: 13px;"
         "}"
-        "QComboBox#filterCombo::drop-down {"
+        "QComboBox#filterCombo::drop-down, QComboBox#cloudSelect::drop-down {"
         "  border: none;"
         "  width: 20px;"
         "}"
@@ -1478,7 +1925,7 @@ def main():
     app.setFont(QFont("Segoe UI", 10))
     apply_stylesheet(app)
 
-    window = DashboardWindow()
+    window = LoginWindow()
     window.show()
 
     sys.exit(app.exec())
