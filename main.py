@@ -911,12 +911,25 @@ class HomeView(QWidget):
         snooze_btn = QPushButton("Silenciar Advertencia por Tiempo Limitado")
         snooze_btn.setObjectName("secondaryButton")
         snooze_btn.setCursor(Qt.PointingHandCursor)
-        snooze_btn.clicked.connect(lambda: self.alert_bar.setVisible(False))
 
         close_btn = QPushButton("Cerrar")
         close_btn.setObjectName("secondaryButton")
         close_btn.setCursor(Qt.PointingHandCursor)
         close_btn.clicked.connect(lambda: self.alert_bar.setVisible(False))
+
+        def toggle_alert():
+            is_visible = alert_text.isVisible()
+            alert_text.setVisible(not is_visible)
+            close_btn.setVisible(not is_visible)
+
+            if is_visible:
+                snooze_btn.setText("Mostrar Advertencia")
+                alert_layout.setContentsMargins(14, 4, 14, 4)
+            else:
+                snooze_btn.setText("Silenciar Advertencia por Tiempo Limitado")
+                alert_layout.setContentsMargins(14, 10, 14, 10)
+
+        snooze_btn.clicked.connect(toggle_alert)
 
         alert_layout.addWidget(snooze_btn)
         alert_layout.addWidget(close_btn)
@@ -1024,6 +1037,13 @@ class EnvironmentalPerformanceView(QWidget):
 
         header_layout.addWidget(header_icon)
         header_layout.addWidget(header_title, 1)
+
+        # CU 57.2
+        export_pdf_btn = QPushButton("Exportar PDF")
+        export_pdf_btn.setObjectName("secondaryButton")
+        export_pdf_btn.setCursor(Qt.PointingHandCursor)
+        export_pdf_btn.clicked.connect(lambda: QMessageBox.information(self, "Exportar", "Certificado descargado físicamente (Resumen Consolidado ESG)."))
+        header_layout.addWidget(export_pdf_btn)
 
         emissions_layout = QHBoxLayout()
         emissions_layout.setSpacing(18)
@@ -1182,12 +1202,36 @@ class CarbonDetailView(QWidget):
         minimize_btn = QPushButton("Minimizar consejo")
         minimize_btn.setObjectName("secondaryButton")
         minimize_btn.setCursor(Qt.PointingHandCursor)
-        minimize_btn.clicked.connect(lambda: panel.setVisible(False))
+
+        def toggle_minimize():
+            is_visible = body.isVisible()
+            body.setVisible(not is_visible)
+            bullet_1.setVisible(not is_visible)
+            bullet_2.setVisible(not is_visible)
+            bullet_3.setVisible(not is_visible)
+            footer.setVisible(not is_visible)
+            button.setVisible(not is_visible)
+            apply_btn.setVisible(not is_visible)
+            abort_btn.setVisible(not is_visible)
+
+            if is_visible:
+                minimize_btn.setText("Maximizar consejo")
+                panel_layout.setContentsMargins(32, 14, 32, 14)
+            else:
+                minimize_btn.setText("Minimizar consejo")
+                panel_layout.setContentsMargins(32, 28, 32, 28)
+
+        minimize_btn.clicked.connect(toggle_minimize)
 
         btn_row.addWidget(button)
         btn_row.addWidget(apply_btn)
         btn_row.addWidget(abort_btn)
-        btn_row.addWidget(minimize_btn)
+
+        # Move minimize button to its own layout so it stays visible when others are hidden
+        min_btn_layout = QHBoxLayout()
+        min_btn_layout.addWidget(minimize_btn)
+        min_btn_layout.setAlignment(Qt.AlignHCenter)
+
         btn_row.setAlignment(Qt.AlignHCenter)
 
         panel_layout.addWidget(icon, 0, Qt.AlignHCenter)
@@ -1198,6 +1242,7 @@ class CarbonDetailView(QWidget):
         panel_layout.addWidget(bullet_3)
         panel_layout.addWidget(footer)
         panel_layout.addLayout(btn_row)
+        panel_layout.addLayout(min_btn_layout)
 
         layout.addWidget(panel, 1)
 
@@ -1211,7 +1256,17 @@ class ModelsView(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(18)
 
-        layout.addWidget(make_label("Modelos", "pageTitle"))
+        header_row = QHBoxLayout()
+        header_row.addWidget(make_label("Modelos", "pageTitle"), 1)
+
+        # CU 13.1, 13.2
+        import_btn = QPushButton("Importar JSON/CSV")
+        import_btn.setObjectName("secondaryButton")
+        import_btn.setCursor(Qt.PointingHandCursor)
+        import_btn.clicked.connect(lambda: QMessageBox.information(self, "Importar", "Validando esquema... Nuevos modelos añadidos a la lista local."))
+        header_row.addWidget(import_btn)
+
+        layout.addLayout(header_row)
         layout.addWidget(make_separator("separator"))
 
         self.models_data = load_csv_rows("modelos_ia.csv")
@@ -1301,8 +1356,7 @@ class ModelsView(QWidget):
         soft_del_btn.clicked.connect(self._handle_soft_delete)
 
         hard_del_btn = QPushButton("Destruir (Hard)")
-        hard_del_btn.setObjectName("secondaryButton")
-        hard_del_btn.setStyleSheet("color: #ff4d4d;")
+        hard_del_btn.setObjectName("dangerButton")
         hard_del_btn.setCursor(Qt.PointingHandCursor)
         hard_del_btn.clicked.connect(self._handle_hard_delete)
 
@@ -1850,6 +1904,75 @@ class UserMenuView(QWidget):
         layout.addLayout(top_row)
         layout.addLayout(bottom_row)
 
+from PySide6.QtWidgets import QDialog
+class UserCreationDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Crear Usuario / Establecer Contraseña")
+        self.setFixedSize(400, 300)
+        self.setStyleSheet("background-color: #111111; color: white;")
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        layout.addWidget(make_label("Usuario:", "infoText"))
+        self.user_input = QLineEdit()
+        self.user_input.setStyleSheet("background-color: #1a1a1a; border: 1px solid #333; padding: 5px;")
+        layout.addWidget(self.user_input)
+
+        layout.addWidget(make_label("Contraseña:", "infoText"))
+        self.pw_input = QLineEdit()
+        self.pw_input.setEchoMode(QLineEdit.Password)
+        self.pw_input.setStyleSheet("background-color: #1a1a1a; border: 1px solid #333; padding: 5px;")
+        layout.addWidget(self.pw_input)
+
+        self.pw_strength_label = make_label("", "loginHint")
+        self.pw_strength_label.setStyleSheet("color: #cfcfcf;")
+        self.pw_strength_label.setVisible(False)
+        layout.addWidget(self.pw_strength_label)
+
+        self.pw_input.textChanged.connect(self._evaluate_password_strength)
+
+        btn_layout = QHBoxLayout()
+        self.create_btn = QPushButton("Crear")
+        self.create_btn.setObjectName("primaryButton")
+        self.create_btn.setCursor(Qt.PointingHandCursor)
+        self.create_btn.clicked.connect(self._create_user)
+
+        cancel_btn = QPushButton("Cancelar")
+        cancel_btn.setObjectName("secondaryButton")
+        cancel_btn.setCursor(Qt.PointingHandCursor)
+        cancel_btn.clicked.connect(self.reject)
+
+        btn_layout.addWidget(cancel_btn)
+        btn_layout.addWidget(self.create_btn)
+        layout.addLayout(btn_layout)
+
+    def _evaluate_password_strength(self, text):
+        if not text:
+            self.pw_strength_label.setVisible(False)
+            return
+
+        missing = []
+        if len(text) < 8: missing.append("longitud (min 8)")
+        if not any(c.isupper() for c in text): missing.append("mayúscula")
+        if not any(c.isdigit() for c in text): missing.append("número")
+        if not any(c in "@-_¿¡?!#$*°" for c in text): missing.append("carácter especial (@-_¿¡?!#$*°)")
+
+        self.pw_strength_label.setVisible(True)
+        if missing:
+            self.pw_strength_label.setText("Falta: " + ", ".join(missing))
+            self.pw_strength_label.setStyleSheet("color: #c4a600;")
+            self.create_btn.setEnabled(False)
+        else:
+            self.pw_strength_label.setText("✓ Contraseña estructuralmente válida.")
+            self.pw_strength_label.setStyleSheet("color: #4eb541;")
+            self.create_btn.setEnabled(True)
+
+    def _create_user(self):
+        QMessageBox.information(self, "Registro Exitoso", "Nuevo registro inyectado en base de datos.")
+        self.accept()
+
 
 class AdminMenuView(QWidget):
     def __init__(self, user_profile, on_logout=None, main_window=None, parent=None):
@@ -1870,8 +1993,8 @@ class AdminMenuView(QWidget):
             MenuSection(
                 "Usuarios",
                 [
-                    ("Crear usuario", "menuButton", None),
-                    ("Resetear contrasena", "menuButton", None),
+                    ("Crear usuario", "menuButton", self._open_creation_dialog),
+                    ("Resetear contrasena", "menuButton", self._mock_reset_pw),
                     ("Desactivar usuario", "menuButton", None),
                     ("Editar roles", "menuButton", None),
                 ],
@@ -1918,6 +2041,13 @@ class AdminMenuView(QWidget):
 
         layout.addLayout(top_row)
         layout.addLayout(bottom_row)
+
+    def _open_creation_dialog(self):
+        dialog = UserCreationDialog(self)
+        dialog.exec()
+
+    def _mock_reset_pw(self):
+        QMessageBox.information(self, "Restablecer Contraseña", "Nueva credencial temporal inyectada al usuario. Se forzará actualización en el próximo inicio de sesión.")
 
     def export_html_report(self):
         score = "N/A"
@@ -3482,6 +3612,32 @@ def apply_stylesheet(app):
         "}"
         "QPushButton#primaryButton:hover {"
         "  background-color: #1a1a1a;"
+        "}"
+        "QPushButton#secondaryButton {"
+        "  background-color: transparent;"
+        "  border: 1px solid #5a5a5a;"
+        "  border-radius: 12px;"
+        "  padding: 8px 20px;"
+        "  font-weight: 600;"
+        "  color: #d8d8d8;"
+        "}"
+        "QPushButton#secondaryButton:hover {"
+        "  background-color: #171717;"
+        "  border: 1px solid #a0a0a0;"
+        "  color: #ffffff;"
+        "}"
+        "QPushButton#dangerButton {"
+        "  background-color: transparent;"
+        "  border: 1px solid #b60f0f;"
+        "  border-radius: 12px;"
+        "  padding: 8px 20px;"
+        "  font-weight: 600;"
+        "  color: #ff6b6b;"
+        "}"
+        "QPushButton#dangerButton:hover {"
+        "  background-color: #3a1010;"
+        "  border: 1px solid #ff4d4d;"
+        "  color: #ffffff;"
         "}"
     )
 
