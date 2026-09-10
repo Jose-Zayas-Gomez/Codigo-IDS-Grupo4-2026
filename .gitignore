@@ -1,0 +1,42 @@
+# Entorno virtual
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Configuración local (opcional, si tiene secretos)
+config.local.json
+
+# Logs
+*.log
+
+# PyInstaller output
+build/
+dist/
+*.spec
+*.toc
+*.pyz
+
+# Runtime-generated local data
+exchange_rates.json
+
+# Local encryption keys and secrets (RF34)
+secrets/
+*.key
+
+# Local MLflow tracking server data (sqlite backend + artifacts)
+mlflow_data/
+ 
+# Backup folder
+backup/
