@@ -10,8 +10,11 @@ import shutil
 import subprocess
 import threading
 import time
+import logging
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
+from app_paths import writable_path
 
 DEFAULT_OLLAMA_URI = "http://127.0.0.1:11434"
 DEFAULT_TEST_MODEL = "llama3.2"
@@ -30,42 +33,62 @@ class OllamaCancelledError(OllamaError):
 
 def is_reachable(uri: str = DEFAULT_OLLAMA_URI, timeout: float = 1.5) -> bool:
     try:
-        with urllib.request.urlopen(f"{uri.rstrip('/')}/api/version", timeout=timeout):
-            return True
+        with urllib.request.urlopen(f"{uri.rstrip('/')}/api/version", timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            return isinstance(data, dict) and isinstance(data.get("version"), str)
     except Exception:
         return False
 
 
-def start_local_server_if_needed(uri: str = DEFAULT_OLLAMA_URI, wait_seconds: float = 15) -> bool:
+def start_local_server_if_needed(uri: str = DEFAULT_OLLAMA_URI, wait_seconds: float = 15, cancel_event=None) -> bool:
     """Intenta levantar `ollama serve` si el binario esta instalado y nada responde aun.
 
     No inventa nada si el binario `ollama` no esta instalado: devuelve False y el error
     real se ve al intentar usar la API (mensaje que indica instalar Ollama).
     """
     global _local_server_process
+    if cancel_event is not None and cancel_event.is_set():
+        return False
     if is_reachable(uri):
         return True
+
+    parsed = urlsplit(uri)
+    if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        return False
 
     ollama_bin = shutil.which("ollama")
     if not ollama_bin:
         return False
 
+    if cancel_event is not None and cancel_event.is_set():
+        return False
     if _local_server_process is None or _local_server_process.poll() is not None:
-        popen_kwargs = {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+        popen_kwargs = {"env": {**os.environ, "OLLAMA_HOST": uri}}
         if os.name == "nt":
             popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
         else:
             popen_kwargs["start_new_session"] = True
         try:
-            _local_server_process = subprocess.Popen([ollama_bin, "serve"], **popen_kwargs)
+            with open(writable_path("logs", "ollama-server.log"), "ab") as output:
+                _local_server_process = subprocess.Popen([ollama_bin, "serve"], stdout=output,
+                                                         stderr=subprocess.STDOUT, **popen_kwargs)
         except OSError:
             return False
 
     deadline = time.time() + wait_seconds
     while time.time() < deadline:
+        if _local_server_process is not None and _local_server_process.poll() is not None:
+            logging.getLogger(__name__).warning("Ollama no inició; revise logs/ollama-server.log y el puerto configurado.")
+            return False
+        if cancel_event is not None and cancel_event.is_set():
+            stop_local_server()
+            return False
         if is_reachable(uri):
             return True
-        time.sleep(0.5)
+        if cancel_event is not None:
+            cancel_event.wait(0.5)
+        else:
+            time.sleep(0.5)
     return False
 
 
@@ -78,6 +101,7 @@ def stop_local_server() -> None:
             subprocess.run(
                 ["taskkill", "/PID", str(process.pid), "/T", "/F"],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
         else:
             import signal
