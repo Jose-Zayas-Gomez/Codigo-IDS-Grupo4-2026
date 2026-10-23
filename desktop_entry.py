@@ -14,9 +14,6 @@ def run():
                             format="%(asctime)s %(levelname)s %(message)s")
         from app_runtime import register_process
         register_process("GUI")
-        if "--self-test" in sys.argv:
-            from distribution_smoke import desktop_smoke
-            return desktop_smoke(sys.argv)
         import main
         return main.main()
     except Exception as exc:

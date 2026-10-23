@@ -72,4 +72,11 @@ artifacts/
 /run_server.bat
 /run_server.sh
 /run_venv_server.bat
- 
+
+# Keep this repository focused on application source.
+/test_*.py
+/tests/
+*.bat
+/.github/workflows/
+/scripts/
+/packaging/

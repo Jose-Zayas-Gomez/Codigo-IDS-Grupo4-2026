@@ -1,4 +1,4 @@
-"""Tests callable from the actual frozen executables on a target without Python."""
+"""Local diagnostics exposed by the application CLI."""
 import json
 from pathlib import Path
 import tempfile
@@ -35,19 +35,3 @@ def diagnose():
                 _apply_report_data("inicio", {"chart_values": [0, 0], "chart_labels": ["CPU", "GPU"]},
                                    str(Path(directory) / ("report." + fmt)), fmt, "es")
     return {"version": VERSION, "portable": is_portable(), "data_root": str(root), "local_checks": "passed"}
-
-
-def desktop_smoke(argv):
-    from PySide6.QtCore import QTimer
-    from PySide6.QtWidgets import QApplication
-    import main
-    output = Path(argv[argv.index("--smoke-report") + 1])
-    app = QApplication([])
-    window = main.LoginWindow()
-    window.show()
-    app.processEvents()
-    result = diagnose()
-    result["login_visible"] = window.isVisible()
-    output.write_text(json.dumps(result), encoding="utf-8")
-    QTimer.singleShot(50, app.quit)
-    return app.exec()

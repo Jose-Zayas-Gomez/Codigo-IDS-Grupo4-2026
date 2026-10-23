@@ -85,7 +85,7 @@ def run(args: argparse.Namespace) -> dict | list | None:
         profile = create_administrator(args.username, password, confirmation)
         return {"created": profile["username"]}
     if args.command == "diagnose":
-        from distribution_smoke import diagnose
+        from diagnostics import diagnose
         return diagnose()
     if args.command == "migrate":
         from data_migration import migrate_legacy

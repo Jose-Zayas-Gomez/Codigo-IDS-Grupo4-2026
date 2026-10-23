@@ -1,16 +1,10 @@
-# Semáforo IA
+# Sem?foro IA
 
-Aplicación de escritorio en Python y PySide6 para registrar proyectos y modelos de IA, revisar costos e impacto ambiental y exportar informes. La persistencia local usa SQLite. Las integraciones con PostgreSQL, Ollama y MLflow requieren servicios configurados por separado.
+Aplicaci?n de escritorio en Python y PySide6 para registrar proyectos y modelos de IA, revisar costos e impacto ambiental y exportar informes. La persistencia local usa SQLite. Las integraciones con PostgreSQL, Ollama y MLflow requieren servicios configurados por separado.
 
-## Desarrollo
+## Ejecutar desde el c?digo
 
-Se requiere Python 3.13.6 x64 para el entorno de distribución de Windows. En Windows, el lanzador para desarrollo prepara `.venv`; la primera instalación de dependencias necesita internet:
-
-```powershell
-.\run_venv.bat
-```
-
-Para crear el entorno manualmente:
+Requiere Python 3.13 x64. Crea un entorno virtual e instala las dependencias:
 
 ```powershell
 py -3.13 -m venv .venv
@@ -18,27 +12,20 @@ py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
-Ejecuta la interfaz con `python main.py` y la CLI con `python cli.py --help`. Las pruebas fuente se ejecutan con:
+La interfaz se inicia con `python main.py`. Consulta los comandos de la CLI con `python cli.py --help`. El servidor opcional se inicia con `python server_entry.py`.
 
-```powershell
-$env:QT_QPA_PLATFORM = 'offscreen'
-.\.venv\Scripts\python.exe -m unittest -v
-```
+## Contenido
 
-## Distribución de Windows
+- M?dulos de la interfaz, l?gica de negocio, persistencia, exportaciones e integraciones.
+- `data/`: cat?logos y factores de referencia.
+- `defaults/`: configuraci?n inicial sin cuentas ni credenciales.
+- `locales/`: traducciones.
+- `requirements.txt`: dependencias; `product.json`: informaci?n de versi?n.
 
-La versión, el editor y las versiones de las herramientas se definen en `product.json`. Para generar el instalador por usuario y el ZIP portable:
+## Descargas para Windows
 
-```powershell
-.\scripts\Initialize-Build.ps1
-.\scripts\Install-InnoSetup.ps1
-.\scripts\Build-Windows.ps1 -Channel Development
-```
-
-La compilación fija las dependencias y sus hashes. Los artefactos de desarrollo aparecen en `artifacts/development/<versión>/`. El proceso de firma de producción exige un certificado Authenticode confiable y falla si no está configurado. Consulta las guías de [Windows](docs/WINDOWS-DISTRIBUTION.md), [portable](docs/PORTABLE.md), [firma](docs/SIGNING.md), [licencias de terceros](docs/THIRD_PARTY.md) y [validación](docs/VALIDACION-DISTRIBUCION.md).
+El [instalador y el portable 1.0.2](https://github.com/Jose-Zayas-Gomez/Codigo-IDS-Grupo4-2026/releases/tag/v1.0.2) est?n disponibles como archivos adjuntos de la release, junto con sus checksums. Es una versi?n de prueba sin firma digital propia.
 
 ## Datos locales
 
-La app guarda la configuración, los modelos editables, SQLite, fotos y secretos en `userdata` durante el desarrollo y en `%LOCALAPPDATA%\SemaforoIA` cuando está instalada. En modo portable, esos datos van en `userdata` junto a `portable.flag`. No subas configuraciones, credenciales, bases de datos, fotos de perfiles, respaldos ni exportaciones.
-
-**Antes de actualizar desde un clon anterior a la limpieza del repositorio, respalda `config.json`, `models.json` e `img/`.** Eran archivos versionados en la versión anterior del repositorio; ya no se distribuirán. La app no los sobrescribe y ofrece una migración explícita con respaldo: usa la opción **Migrar distribución anterior** o `SemaforoCLI.exe migrate --source "ruta\anterior" --confirm`.
+La aplicaci?n guarda los datos de desarrollo en `userdata/`. La versi?n instalada utiliza `%LOCALAPPDATA%\SemaforoIA`; el portable utiliza `userdata/` junto a `portable.flag`. No subas configuraciones personales, credenciales, bases de datos, fotos de perfiles, respaldos ni exportaciones.
